@@ -8,6 +8,8 @@ Acucli is a command-line tool developed in Go, designed to interact with Acuneti
 - Create, Delete, List and Add Targets to Target Group
 - Create, Delete, List and Import/Export Scan Profiles
 - Trigger Scans
+- Generate and manage reports
+- Automate the entire scan workflow with cleanup
 
 ## Installation
 
@@ -76,6 +78,46 @@ echo "<SCANPROFILE-ID>" | acucli scanProfile remove # Remove the scan profile by
 cat targets.txt | acucli scan --scanProfileID=<SCANPROFILE-ID> # Start scan for the target ids with given Scan Profile ID
 
 ```
+
+### Report
+
+```bash
+acucli report list # List all reports
+
+echo "<SCAN-ID>" | acucli report generate --templateID=<TEMPLATE-ID> # Generate a report for a scan
+
+echo "<REPORT-ID>" | acucli report get # Get details of a specific report
+
+echo "<REPORT-ID>" | acucli report remove # Remove a report
+```
+
+### Auto
+
+```bash
+# Automate the entire process: add target, scan, generate report, download files, and clean up
+acucli auto --target=https://example.com
+
+# Use a specific scan profile and report template
+acucli auto --target=https://example.com --scanProfileID=<SCAN-PROFILE-ID> --reportTemplateID=<REPORT-TEMPLATE-ID>
+
+# Specify output format (html or csv)
+acucli auto --target=https://example.com --format=csv
+
+# Specify output path for downloaded report files
+acucli auto --target=https://example.com --output=/path/to/output/report.html
+
+# Set custom timeout for waiting operations
+acucli auto --target=https://example.com --timeout=600
+```
+
+The `auto` command streamlines the entire workflow by:
+1. Adding a target with the specified URL
+2. Starting a scan with the specified scan profile
+3. Generating a report (HTML) or creating an export (CSV)
+4. Downloading the report/export files
+5. Automatically cleaning up all resources (report, scan, and target) after successful download
+
+This command is ideal for one-off scans where you want to get results without leaving resources behind in the system.
 
 ### Example Scenarios
 ```bash

@@ -96,7 +96,7 @@ type ExportRequest struct {
 
 // ExportResponse structure for export response
 type ExportResponse struct {
-	ExportID string `json:"export_id"`
+	ReportID string `json:"report_id"`
 }
 
 var targetURL string
@@ -298,7 +298,6 @@ This command performs the following steps:
 			"status":    "completed",
 		}
 		jsonoutput.OutputJSON(progressLog)
-
 		// Step 8: Wait for report completion and get download links
 		downloadLinks, err = waitForReportCompletion(reportID, waitTimeout)
 		if err != nil || len(downloadLinks) == 0 {
@@ -322,12 +321,12 @@ This command performs the following steps:
 		downloadedFiles, err := downloadReportFiles(downloadLinks, outputPath)
 		if err != nil {
 			jsonoutput.OutputErrorAsJSON(err, "Error downloading files")
-			// Clean up in the specified order
-			if strings.ToLower(outputFormat) == "csv" {
-				removeExport(reportID)
-			} else {
-				removeReport(reportID)
-			}
+			//// Clean up in the specified order
+			//if strings.ToLower(outputFormat) == "csv" {
+			//	removeExport(reportID)
+			//} else {
+			removeReport(reportID)
+			//}
 			removeScan(scanID)
 			removeTarget(targetID)
 			return
@@ -351,6 +350,78 @@ This command performs the following steps:
 			"message":   "Auto process completed successfully",
 		}
 		jsonoutput.OutputJSON(result)
+
+		// Clean up resources after successful download
+		cleanupLog := map[string]interface{}{
+			"step":    "Cleanup",
+			"status":  "in_progress",
+			"message": "Removing resources after successful download",
+		}
+		jsonoutput.OutputJSON(cleanupLog)
+
+		// Remove in the specified order: report first, then scan, then target
+		var cleanupErrors []string
+
+		// Remove report/export
+		//if strings.ToLower(outputFormat) == "csv" {
+		//	if err := removeExport(reportID); err != nil {
+		//		cleanupErrors = append(cleanupErrors, fmt.Sprintf("Failed to remove export: %v", err))
+		//	} else {
+		//		jsonoutput.OutputJSON(map[string]interface{}{
+		//			"step":      "Cleanup - Remove export",
+		//			"export_id": reportID,
+		//			"status":    "completed",
+		//		})
+		//	}
+		//} else {
+		if err := removeReport(reportID); err != nil {
+			cleanupErrors = append(cleanupErrors, fmt.Sprintf("Failed to remove report: %v", err))
+		} else {
+			jsonoutput.OutputJSON(map[string]interface{}{
+				"step":      "Cleanup - Remove report",
+				"report_id": reportID,
+				"status":    "completed",
+			})
+		}
+		//}
+
+		// Remove scan
+		if err := removeScan(scanID); err != nil {
+			cleanupErrors = append(cleanupErrors, fmt.Sprintf("Failed to remove scan: %v", err))
+		} else {
+			jsonoutput.OutputJSON(map[string]interface{}{
+				"step":    "Cleanup - Remove scan",
+				"scan_id": scanID,
+				"status":  "completed",
+			})
+		}
+
+		// Remove target
+		if err := removeTarget(targetID); err != nil {
+			cleanupErrors = append(cleanupErrors, fmt.Sprintf("Failed to remove target: %v", err))
+		} else {
+			jsonoutput.OutputJSON(map[string]interface{}{
+				"step":      "Cleanup - Remove target",
+				"target_id": targetID,
+				"status":    "completed",
+			})
+		}
+
+		// Report any cleanup errors
+		if len(cleanupErrors) > 0 {
+			jsonoutput.OutputJSON(map[string]interface{}{
+				"step":    "Cleanup",
+				"status":  "warning",
+				"message": "Some cleanup operations failed",
+				"errors":  cleanupErrors,
+			})
+		} else {
+			jsonoutput.OutputJSON(map[string]interface{}{
+				"step":    "Cleanup",
+				"status":  "completed",
+				"message": "All resources successfully removed",
+			})
+		}
 	},
 }
 
@@ -647,7 +718,10 @@ func waitForReportCompletion(reportID string, timeoutSeconds int) ([]string, err
 			// Filter download links to only include .html files
 			var htmlLinks []string
 			for _, link := range reportResponse.Download {
-				if strings.HasSuffix(link, ".html") {
+				if strings.HasSuffix(link, ".csv") && outputFormat == "csv" {
+
+				}
+				if strings.HasSuffix(link, ".html") && outputFormat != "csv" {
 					htmlLinks = append(htmlLinks, link)
 				}
 			}
@@ -878,7 +952,7 @@ func createExport(exportID string, scanIDs []string) (string, error) {
 		return "", fmt.Errorf("error parsing response: %v", err)
 	}
 
-	return response.ExportID, nil
+	return response.ReportID, nil
 }
 
 // Check if an export exists
