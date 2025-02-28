@@ -1,139 +1,212 @@
 # Acucli
 
-Acucli is a command-line tool developed in Go, designed to interact with Acunetix scans efficiently. It allows users to manage their Acunetix scans directly from the terminal, providing a streamlined and accessible way to handle web application security assessments.
+A powerful command-line interface tool for Acunetix that streamlines web application security scanning workflows. Acucli allows you to manage targets, scans, reports, and automate entire security assessment processes directly from your terminal.
 
 ## Features
 
-- Create, Delete, List and Set/Get Configuration to targets
-- Create, Delete, List and Add Targets to Target Group
-- Create, Delete, List and Import/Export Scan Profiles
-- Trigger Scans
-- Generate and manage reports
-- Automate the entire scan workflow with cleanup
+- **Target Management**
+  - Create, list, and delete targets
+  - Configure target settings
+  - Manage target groups
+- **Scan Management**
+  - Configure and run scans
+  - Monitor scan progress
+  - Manage scan profiles
+- **Report Generation**
+  - Generate HTML and CSV reports
+  - Manage report templates
+  - Download report files
+- **Automation**
+  - Automate entire scanning workflow
+  - Automatic resource cleanup
+  - Pipeline integration support
+- **Configuration**
+  - YAML-based configuration
+  - Environment variable support
+  - Flexible API settings
 
 ## Installation
 
-You can install Acucli directly from the source code hosted on GitHub. Ensure you have Go installed on your system before proceeding with the installation. Also grab a copy of the .acucli.yaml file to work with configuration setup and setting env variables. You can find it on the repository. Put that file on the home folder in your machine.
-
-```bash
-go install github.com/tosbaa/acucli@latest
-
-```
+1. Ensure you have Go installed on your system
+2. Install Acucli using Go:
+   ```bash
+   go install github.com/tosbaa/acucli@latest
+   ```
+3. Download the configuration template:
+   ```bash
+   # Download .acucli.yaml and place it in your home directory
+   curl -O https://raw.githubusercontent.com/tosbaa/acucli/main/.acucli.yaml
+   mv .acucli.yaml ~/
+   ```
+4. Configure your API settings in `~/.acucli.yaml`
 
 ## Usage
 
-After installation, you can start using Acucli to interact with your Acunetix scans. For detailed usage instructions and command options, refer to the [documentation](https://github.com/tosbaa/acucli) or use the help command:
+### Global Flags
+
+- `--config, -c`: Specify config file (default: $HOME/.acucli.yaml)
+- `--version, -v`: Show version information
+- `--help, -h`: Show help information
+
+### Target Management
 
 ```bash
-acucli --help
+# List all targets
+acucli target list
+
+# Add a target
+echo "https://target.com" | acucli target add
+
+# Add multiple targets to a group
+cat targets.txt | acucli target add --gid=<TARGETGROUP-ID>
+
+# Get target information
+acucli target --id <TARGET-ID>
+
+# Set target configuration
+echo "<TARGET-ID>" | acucli target setConfig
+
+# Remove a target
+echo "<TARGET-ID>" | acucli target remove
 ```
 
-### Target
+### Target Group Management
 
 ```bash
-acucli target list # Lists the target with their corresponding ids
+# Create a target group
+echo "TargetGroupName" | acucli targetGroup add
 
-echo "https://target.com" | acucli target add # Adds the target from stdin
+# List target groups
+acucli targetGroup list
 
-echo "<TARGET-ID>" | acucli target remove # Removed the target with the given id
+# Get group information
+acucli targetGroup --id <TARGETGROUP-ID>
 
-acucli target --id <TARGET-ID> # Get info about the target
-
-echo "<TARGET-ID>" | acucli target setConfig # Set scan configuration defined on the .acucli.yaml file
-
-cat targets.txt | acucli target add --gid=<TARGETGROUP-ID> # Add targets to a target group with given id
+# Remove a target group
+echo "<TARGETGROUP-ID>" | acucli targetGroup remove
 ```
 
-### Target Group
+### Scan Profile Management
 
 ```bash
-echo "TargetGroupName" | acucli targetGroup add # Create new target group
+# List scan profiles
+acucli scanProfile list
 
-echo "<TARGETGROUP-ID>" | acucli targetGroup remove # Removed the target group with the given id
+# Get profile information
+acucli scanProfile --id=<SCANPROFILE-ID>
 
-acucli targetGroup list # List the target groups
+# Export a scan profile
+acucli scanProfile --id=<SCANPROFILE-ID> -e
 
-acucli targetGroup --id <TARGET-ID> # Get targets from target group
+# Import a scan profile
+cat profile.json | acucli scanProfile add
 
-```
-### Scan Profile
-
-```bash
-
-acucli scanProfile list # List Scan Profiles with their ids
-
-acucli scanProfile --id=<SCANPROFILE-ID> # Get Scan Profile info
-
-acucli scanProfile --id=<SCANPROFILE-ID> -e # Export the scan profile as json. It will write the json with the scan profile name with its current name
-
-cat <SCANPROFILE-NAME>.json | acucli scanProfile add # Add exported Scan Profile
-
-echo "<SCANPROFILE-ID>" | acucli scanProfile remove # Remove the scan profile by its id
-
-```
-### Scan
-
-```bash
-
-cat targets.txt | acucli scan --scanProfileID=<SCANPROFILE-ID> # Start scan for the target ids with given Scan Profile ID
-
+# Remove a scan profile
+echo "<SCANPROFILE-ID>" | acucli scanProfile remove
 ```
 
-### Report
+### Scan Management
 
 ```bash
-acucli report list # List all reports
+# Start a scan for single target
+acucli scan --targetID=<TARGET-ID> --scanProfileID=<SCANPROFILE-ID>
 
-echo "<SCAN-ID>" | acucli report generate --templateID=<TEMPLATE-ID> # Generate a report for a scan
+# Start scans for multiple targets
+cat targets.txt | acucli scan --scanProfileID=<SCANPROFILE-ID>
 
-echo "<REPORT-ID>" | acucli report get # Get details of a specific report
-
-echo "<REPORT-ID>" | acucli report remove # Remove a report
+# Start scans for a target group
+acucli targetGroup --id=<TARGETGROUP-ID> | cut -f2 | acucli scan --scanProfileID=<SCANPROFILE-ID>
 ```
 
-### Auto
+### Report Management
 
 ```bash
-# Automate the entire process: add target, scan, generate report, download files, and clean up
+# List all reports
+acucli report list
+
+# Generate a report
+echo "<SCAN-ID>" | acucli report generate --templateID=<TEMPLATE-ID>
+
+# Get report details
+echo "<REPORT-ID>" | acucli report get
+
+# Remove a report
+echo "<REPORT-ID>" | acucli report remove
+```
+
+### Automated Workflow
+
+The `auto` command automates the entire scanning process in one command:
+
+```bash
+# Basic usage
 acucli auto --target=https://example.com
 
-# Use a specific scan profile and report template
-acucli auto --target=https://example.com --scanProfileID=<SCAN-PROFILE-ID> --reportTemplateID=<REPORT-TEMPLATE-ID>
-
-# Specify output format (html or csv)
-acucli auto --target=https://example.com --format=csv
-
-# Specify output path for downloaded report files
-acucli auto --target=https://example.com --output=/path/to/output/report.html
-
-# Set custom timeout for waiting operations
-acucli auto --target=https://example.com --timeout=600
+# Advanced usage
+acucli auto \
+  --target=https://example.com \
+  --scanProfileID=<SCAN-PROFILE-ID> \
+  --reportTemplateID=<REPORT-TEMPLATE-ID> \
+  --format=html \
+  --output=/path/to/output/report.html \
+  --timeout=600
 ```
 
-The `auto` command streamlines the entire workflow by:
-1. Adding a target with the specified URL
-2. Starting a scan with the specified scan profile
-3. Generating a report (HTML) or creating an export (CSV)
-4. Downloading the report/export files
-5. Automatically cleaning up all resources (report, scan, and target) after successful download
+#### Auto Command Workflow
 
-This command is ideal for one-off scans where you want to get results without leaving resources behind in the system.
+1. Adds target with specified URL
+2. Verifies target creation
+3. Starts scan with specified profile
+4. Monitors scan progress
+5. Generates report/export
+6. Downloads report files
+7. Cleans up resources automatically
 
-### Example Scenarios
+#### Auto Command Options
+
+- `--target, -u`: Target URL to scan (required)
+- `--format, -f`: Output format (html or csv, default: html)
+- `--output, -o`: Output path for report files
+- `--timeout, -i`: Timeout in seconds (default: 800)
+- `--scanProfileID, -s`: Custom scan profile ID
+- `--reportTemplateID, -r`: Custom report template ID
+
+## Advanced Usage
+
+### Pipeline Integration
+
 ```bash
+# Scan all targets in a group and remove them afterward
+acucli targetGroup --id=<TARGETGROUP-ID> | cut -f2 | tee >(acucli scan --scanProfileID=<SCANPROFILE-ID>) | acucli target remove
 
-acucli targetGroup --id=<TARGETGROUP-ID> | cut -f2 | acucli scan --scanProfileID=<SCANPROFILE-ID> # Start scan for the targets for given target group
-
-acucli targetGroup --id=<TARGETGROUP-ID> | cut -f2 | acucli target remove # Remove all targets inside a Target Group
-
+# Generate reports for multiple scans
+acucli scan list | cut -f1 | acucli report generate --templateID=<TEMPLATE-ID>
 ```
 
+### Configuration File (.acucli.yaml)
+
+```yaml
+API: "your-api-key-here"
+URL: "https://your-acunetix-instance"
+ScanConfig:
+  target_timeout: 0
+  max_scan_time: 0
+  scanning_mode: "sequential"
+  user_agent: "Mozilla/5.0..."
+```
 
 ## Contributing
 
-Contributions are welcome! If you'd like to contribute, please fork the repository and use a feature branch. Pull requests are warmly welcome.
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
 
+## License
 
-## Licensing
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-The code in this project is licensed under MIT license.
+## Support
+
+For issues and feature requests, please use the [GitHub issue tracker](https://github.com/tosbaa/acucli/issues).
