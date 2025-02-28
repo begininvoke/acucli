@@ -1065,7 +1065,7 @@ func removeExport(exportID string) error {
 
 func init() {
 	// Define flags
-	AutoCmd.Flags().StringVarP(&targetURL, "target", "t", "", "Target URL to scan (required)")
+	AutoCmd.Flags().StringVarP(&targetURL, "target", "u", "", "Target URL to scan (required)")
 	AutoCmd.Flags().StringVarP(&scanProfileID, "scanProfileID", "s", "", "Scan profile ID to use")
 	AutoCmd.Flags().StringVarP(&reportTemplateID, "reportTemplateID", "r", "", "Report template ID to use")
 	AutoCmd.Flags().IntVarP(&waitTimeout, "timeout", "i", 800, "Timeout in seconds for waiting operations")
