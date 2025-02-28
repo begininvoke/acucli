@@ -719,7 +719,7 @@ func waitForReportCompletion(reportID string, timeoutSeconds int) ([]string, err
 			var htmlLinks []string
 			for _, link := range reportResponse.Download {
 				if strings.HasSuffix(link, ".csv") && outputFormat == "csv" {
-
+					htmlLinks = append(htmlLinks, link)
 				}
 				if strings.HasSuffix(link, ".html") && outputFormat != "csv" {
 					htmlLinks = append(htmlLinks, link)
@@ -750,7 +750,7 @@ func downloadReportFiles(downloadLinks []string, outputPath string) ([]string, e
 		// Check if the output path ends with .html (or another extension)
 		// to determine if it's a filename or just a directory
 		if strings.HasSuffix(strings.ToLower(outputPath), ".html") ||
-			strings.HasSuffix(strings.ToLower(outputPath), ".htm") {
+			strings.HasSuffix(strings.ToLower(outputPath), ".csv") {
 			// It's a filename
 			customFilename = filepath.Base(outputPath)
 			outputDir = filepath.Dir(outputPath)
@@ -872,7 +872,7 @@ func removeScan(scanID string) error {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusNoContent {
 		return fmt.Errorf("error removing scan, status code: %d", resp.StatusCode)
 	}
 
@@ -906,7 +906,7 @@ func removeTarget(targetID string) error {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusNoContent {
 		return fmt.Errorf("error removing target, status code: %d", resp.StatusCode)
 	}
 
