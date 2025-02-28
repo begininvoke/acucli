@@ -136,7 +136,7 @@ func addTarget(targetURL string) (string, error) {
 			Address:     targetURL,
 			Description: "",
 			Type:        "default",
-			Criticality: 30,
+			Criticality: 10,
 		},
 	}
 
@@ -811,7 +811,7 @@ func RunAutoCommand(targetURL string, waitTimeout int, outputPath string, output
 
 	if scanProfileID == "" {
 		// Use default scan profile ID if not provided
-		scanProfileID = "11111111-1111-1111-1111-111111111111"
+		scanProfileID = "11111111-1111-1111-1111-111111111119" //  "Critical / High / Medium Risk",
 	}
 
 	if reportTemplateID == "" && outputFormat != "csv" {
