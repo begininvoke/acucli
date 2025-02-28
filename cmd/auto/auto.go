@@ -1063,15 +1063,116 @@ func removeExport(exportID string) error {
 	return nil
 }
 
+// RunAutoCommand executes the auto workflow with the given parameters
+func RunAutoCommand(targetURL string, waitTimeout int, outputPath string, outputFormat string) error {
+	if targetURL == "" {
+		return fmt.Errorf("target URL is required")
+	}
+
+	var downloadedFiles []string
+	var targetID, scanID, reportID string
+	var err error
+
+	// Add target
+	targetID, err = addTarget(targetURL)
+	if err != nil {
+		return fmt.Errorf("failed to add target: %v", err)
+	}
+
+	// Start scan
+	scanID, err = startScan(targetID, scanProfileID)
+	if err != nil {
+		removeTarget(targetID)
+		return fmt.Errorf("failed to start scan: %v", err)
+	}
+
+	// Wait for scan completion
+	scanComplete, err := waitForScanCompletion(scanID, waitTimeout)
+	if err != nil || !scanComplete {
+		removeScan(scanID)
+		removeTarget(targetID)
+		if err != nil {
+			return fmt.Errorf("error waiting for scan: %v", err)
+		}
+		return fmt.Errorf("scan timed out after %d seconds", waitTimeout)
+	}
+
+	if outputFormat == "csv" {
+		// Create CSV export
+		exportID, err := createExport("csv", []string{scanID})
+		if err != nil {
+			removeScan(scanID)
+			removeTarget(targetID)
+			return fmt.Errorf("failed to create export: %v", err)
+		}
+
+		// Wait for export completion
+		downloadLinks, err := waitForExportCompletion(exportID, waitTimeout)
+		if err != nil {
+			removeExport(exportID)
+			removeScan(scanID)
+			removeTarget(targetID)
+			return fmt.Errorf("error waiting for export: %v", err)
+		}
+
+		// Download export files
+		downloadedFiles, err = downloadReportFiles(downloadLinks, outputPath)
+		if err != nil {
+			removeExport(exportID)
+			removeScan(scanID)
+			removeTarget(targetID)
+			return fmt.Errorf("failed to download export files: %v", err)
+		}
+
+		// Cleanup after successful download
+		removeExport(exportID)
+	} else {
+		// Generate HTML report
+		reportID, err = generateReport(reportTemplateID, "Auto-generated report", "scans", []string{scanID})
+		if err != nil {
+			removeScan(scanID)
+			removeTarget(targetID)
+			return fmt.Errorf("failed to generate report: %v", err)
+		}
+
+		// Wait for report completion
+		downloadLinks, err := waitForReportCompletion(reportID, waitTimeout)
+		if err != nil {
+			removeReport(reportID)
+			removeScan(scanID)
+			removeTarget(targetID)
+			return fmt.Errorf("error waiting for report: %v", err)
+		}
+
+		// Download report files
+		downloadedFiles, err = downloadReportFiles(downloadLinks, outputPath)
+		if err != nil {
+			removeReport(reportID)
+			removeScan(scanID)
+			removeTarget(targetID)
+			return fmt.Errorf("failed to download report files: %v", err)
+		}
+
+		// Cleanup after successful download
+		removeReport(reportID)
+	}
+
+	// Cleanup remaining resources
+	removeScan(scanID)
+	removeTarget(targetID)
+
+	// Output final result as JSON
+	result := map[string]interface{}{
+		"status": "completed",
+		"files":  downloadedFiles,
+	}
+	jsonoutput.OutputJSON(result)
+
+	return nil
+}
+
 func init() {
-	// Define flags
-	AutoCmd.Flags().StringVarP(&targetURL, "target", "u", "", "Target URL to scan (required)")
+	// Remove existing flag definitions since they're now global
 	AutoCmd.Flags().StringVarP(&scanProfileID, "scanProfileID", "s", "", "Scan profile ID to use")
 	AutoCmd.Flags().StringVarP(&reportTemplateID, "reportTemplateID", "r", "", "Report template ID to use")
-	AutoCmd.Flags().IntVarP(&waitTimeout, "timeout", "i", 800, "Timeout in seconds for waiting operations")
-	AutoCmd.Flags().StringVarP(&outputPath, "output", "o", "", "Output path for downloaded report files (directory or specific filename)")
-	AutoCmd.Flags().StringVarP(&outputFormat, "format", "f", "html", "Output format for the report (csv or html)")
-
-	// Mark required flags
-	AutoCmd.MarkFlagRequired("target")
 }

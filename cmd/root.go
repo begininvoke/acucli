@@ -1,30 +1,14 @@
 /*
-Copyright © 2023 Yağız Koçer yagizkocer@gmail.com
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
+Copyright © 2023 NAME HERE <EMAIL ADDRESS>
 */
 package cmd
 
 import (
-	"net/http"
+	"fmt"
 	"os"
 
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 	"github.com/tosbaa/acucli/cmd/auto"
 	"github.com/tosbaa/acucli/cmd/export"
 	"github.com/tosbaa/acucli/cmd/report"
@@ -33,22 +17,41 @@ import (
 	"github.com/tosbaa/acucli/cmd/target"
 	"github.com/tosbaa/acucli/cmd/targetGroup"
 	"github.com/tosbaa/acucli/helpers/httpclient"
-
-	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
-var cfgFile string
-var MyHTTPClient http.Client
+var (
+	cfgFile string
+	// Global flags
+	targetURL    string
+	waitTimeout  int
+	outputPath   string
+	outputFormat string
+	autoMode     bool
+	versionFlag  bool
+)
 
 // rootCmd represents the base command when called without any subcommands
 var RootCmd = &cobra.Command{
 	Use:   "acucli",
-	Short: "Acunetix CLI",
-	Long:  `A simple CLI tool to interact with Acunetix Scanner`,
-	// Uncomment the following line if your bare application
-	// has an action associated with it:
-	// Run: func(cmd *cobra.Command, args []string) { },
+	Short: "A CLI tool for Acunetix",
+	Long: `A command line interface tool for Acunetix that allows you to:
+- Manage targets and target groups
+- Configure and run scans
+- Generate and manage reports
+- Automate the entire scanning workflow`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if versionFlag {
+			fmt.Println("acucli version 1.0.0")
+			return nil
+		}
+
+		if autoMode {
+			// Run auto command with global flags
+			return auto.RunAutoCommand(targetURL, waitTimeout, outputPath, outputFormat)
+		}
+
+		return cmd.Help()
+	},
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
@@ -70,15 +73,16 @@ func init() {
 	RootCmd.AddCommand(export.ExportCmd)
 	cobra.OnInitialize(initConfig)
 
-	// Here you will define your flags and configuration settings.
-	// Cobra supports persistent flags, which, if defined here,
-	// will be global for your application.
-
+	// Global flags
 	RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.acucli.yaml)")
+	RootCmd.PersistentFlags().StringVarP(&targetURL, "u", "u", "", "Target URL to scan")
+	RootCmd.PersistentFlags().IntVarP(&waitTimeout, "i", "i", 800, "Timeout in seconds for waiting operations")
+	RootCmd.PersistentFlags().StringVarP(&outputPath, "o", "o", "", "Output path for downloaded report files")
+	RootCmd.PersistentFlags().StringVarP(&outputFormat, "f", "f", "html", "Output format (csv or html)")
 
-	// Cobra also supports local flags, which will only run
-	// when this action is called directly.
-	RootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	// Root-only flags
+	RootCmd.Flags().BoolVarP(&autoMode, "auto", "a", false, "Run in auto mode")
+	RootCmd.Flags().BoolVarP(&versionFlag, "version", "v", false, "Show version information")
 }
 
 // initConfig reads in config file and ENV variables if set.
@@ -106,7 +110,6 @@ func initConfig() {
 
 	// If a config file is found, read it in.
 	if err := viper.ReadInConfig(); err == nil {
-		//fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
 		httpclient.CreateHttpClient(viper.GetString("API"))
 	}
 }
