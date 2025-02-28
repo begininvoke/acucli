@@ -7,13 +7,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"github.com/tosbaa/acucli/helpers/filehelper"
 	"github.com/tosbaa/acucli/helpers/httpclient"
-	"github.com/ttacon/chalk"
+	"github.com/tosbaa/acucli/helpers/jsonoutput"
 )
 
 type PostBody struct {
@@ -37,33 +38,61 @@ var AddCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		input := filehelper.ReadStdin()
 		if input != nil {
+			results := make(map[string]interface{})
+
 			for _, targetGroupName := range input {
 				postBody := PostBody{Name: targetGroupName}
-				requestJson, _ := json.Marshal(postBody)
+				requestJson, err := json.Marshal(postBody)
+				if err != nil {
+					results[targetGroupName] = map[string]string{
+						"error": fmt.Sprintf("Error creating JSON request: %v", err),
+					}
+					continue
+				}
+
 				req, err := http.NewRequest("POST", fmt.Sprintf("%s%s", viper.GetString("URL"), "/target_groups"), bytes.NewBuffer(requestJson))
 				if err != nil {
-					fmt.Println("Error creating request:", err)
-					return
+					results[targetGroupName] = map[string]string{
+						"error": fmt.Sprintf("Error creating request: %v", err),
+					}
+					continue
 				}
 				req.Header.Set("Content-Type", "application/json")
+
 				resp, err := httpclient.MyHTTPClient.Do(req)
 				if err != nil {
-					fmt.Println("Error making request:", err)
-					return
-				}
-				defer resp.Body.Close()
-				if resp.StatusCode == http.StatusCreated {
-					var responseBody ResponseBody
-					decoder := json.NewDecoder(resp.Body)
-					if err := decoder.Decode(&responseBody); err != nil {
-						fmt.Println("Error decoding response body:", err)
-						return
+					results[targetGroupName] = map[string]string{
+						"error": fmt.Sprintf("Error making request: %v", err),
 					}
-					fmt.Println(chalk.Green, chalk.Bold.TextStyle(responseBody.Name+" "+responseBody.GroupID), chalk.Reset)
+					continue
+				}
+
+				responseBody, err := io.ReadAll(resp.Body)
+				resp.Body.Close()
+
+				if err != nil {
+					results[targetGroupName] = map[string]string{
+						"error": fmt.Sprintf("Error reading response body: %v", err),
+					}
+					continue
+				}
+
+				var response ResponseBody
+				err = json.Unmarshal(responseBody, &response)
+				if err != nil {
+					results[targetGroupName] = map[string]string{
+						"error":        fmt.Sprintf("Error parsing response: %v", err),
+						"raw_response": string(responseBody),
+					}
+				} else {
+					results[targetGroupName] = response
 				}
 			}
+
+			// Output only the JSON response
+			jsonoutput.OutputJSON(results)
 		} else {
-			fmt.Println("Please provide input")
+			jsonoutput.OutputErrorAsJSON(fmt.Errorf("no input provided"), "Error")
 		}
 	},
 }

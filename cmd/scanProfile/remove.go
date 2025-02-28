@@ -5,13 +5,14 @@ package scanProfile
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"github.com/tosbaa/acucli/helpers/filehelper"
 	"github.com/tosbaa/acucli/helpers/httpclient"
-	"github.com/ttacon/chalk"
+	"github.com/tosbaa/acucli/helpers/jsonoutput"
 )
 
 // removeCmd represents the remove command
@@ -23,41 +24,53 @@ var RemoveCmd = &cobra.Command{
 cat scanProfileids.txt | acucli scanProfile remove`,
 	Run: func(cmd *cobra.Command, args []string) {
 		input := filehelper.ReadStdin()
-		if input != nil {
+		if input != nil && len(input) > 0 {
 			makeDeleteRequest(input)
+		} else {
+			jsonoutput.OutputErrorAsJSON(fmt.Errorf("no scan profile IDs provided"), "Error")
 		}
 	},
 }
 
 func makeDeleteRequest(ids []string) {
-	var allDeleted = true
+	results := make(map[string]interface{})
+
 	for _, id := range ids {
 		req, err := http.NewRequest("DELETE", fmt.Sprintf("%s%s%s", viper.GetString("URL"), "/scanning_profiles/", id), nil)
 		if err != nil {
-			fmt.Println("Error creating request:", err)
-			return
+			results[id] = map[string]string{
+				"error": fmt.Sprintf("Error creating request: %v", err),
+			}
+			continue
 		}
 		req.Header.Set("Content-Type", "application/json")
+
 		resp, err := httpclient.MyHTTPClient.Do(req)
 		if err != nil {
-			fmt.Println("Error making request:", err)
-			return
+			results[id] = map[string]string{
+				"error": fmt.Sprintf("Error making request: %v", err),
+			}
+			continue
 		}
 
-		if resp.StatusCode == 404 {
-			fmt.Printf("%sSpecified ScanProfile couldn't found%s\n", chalk.Red, chalk.Reset)
-			allDeleted = false
-			break
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		result := map[string]interface{}{
+			"status_code": resp.StatusCode,
+			"status":      resp.Status,
 		}
 
-		defer resp.Body.Close()
-	}
-	if allDeleted {
-		fmt.Println(chalk.Red, chalk.Bold.TextStyle("ScanProfile Removed:"), chalk.Reset)
-		for _, id := range ids {
-			fmt.Printf("%s%s%s\n", chalk.Red, id, chalk.Reset)
+		// If there's a response body, include it
+		if len(body) > 0 {
+			result["response_body"] = string(body)
 		}
+
+		results[id] = result
 	}
+
+	// Output only the JSON response
+	jsonoutput.OutputJSON(results)
 }
 
 func init() {

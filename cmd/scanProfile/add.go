@@ -15,7 +15,7 @@ import (
 	"github.com/spf13/viper"
 	"github.com/tosbaa/acucli/helpers/filehelper"
 	"github.com/tosbaa/acucli/helpers/httpclient"
-	"github.com/ttacon/chalk"
+	"github.com/tosbaa/acucli/helpers/jsonoutput"
 )
 
 // addCmd represents the add command
@@ -25,8 +25,12 @@ var AddCmd = &cobra.Command{
 	Long: `Imports the exported scan profile. It takes the config json file from stdin (you can export the scan with --export flag). Example:
 	cat scanProfile.json | acucli scanProfile add`,
 	Run: func(cmd *cobra.Command, args []string) {
-		var scanProfile ScanProfile
 		data := filehelper.ReadStdin()
+		if data == nil || len(data) == 0 {
+			jsonoutput.OutputErrorAsJSON(fmt.Errorf("no scan profile data provided"), "Error")
+			return
+		}
+
 		var stringBuilder strings.Builder
 		for _, str := range data {
 			stringBuilder.WriteString(str) // Add each string to the builder.
@@ -35,35 +39,62 @@ var AddCmd = &cobra.Command{
 
 		// Convert the combined string to a byte slice.
 		byteSlice := []byte(combinedString)
+		var scanProfile ScanProfile
 		err := json.Unmarshal(byteSlice, &scanProfile)
-		if err == nil {
-			makeRequest(scanProfile)
+		if err != nil {
+			jsonoutput.OutputErrorAsJSON(err, "Error parsing scan profile JSON")
+			return
 		}
+
+		makeRequest(scanProfile)
 	},
 }
 
 func makeRequest(scanProfile ScanProfile) {
-	requestJson, _ := json.Marshal(scanProfile)
+	requestJson, err := json.Marshal(scanProfile)
+	if err != nil {
+		jsonoutput.OutputErrorAsJSON(err, "Error creating JSON request")
+		return
+	}
+
 	req, err := http.NewRequest("POST", fmt.Sprintf("%s%s", viper.GetString("URL"), "/scanning_profiles"), bytes.NewBuffer(requestJson))
 	if err != nil {
-		fmt.Println("Error creating request:", err)
+		jsonoutput.OutputErrorAsJSON(err, "Error creating request")
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
+
 	resp, err := httpclient.MyHTTPClient.Do(req)
 	if err != nil {
-		fmt.Println("Error making request:", err)
+		jsonoutput.OutputErrorAsJSON(err, "Error making request")
 		return
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusCreated {
-		fmt.Println(chalk.Green, chalk.Bold.TextStyle("Successfully Added ScanProfile"), chalk.Reset)
-
-	} else {
-		body, _ := io.ReadAll(resp.Body)
-		fmt.Print(string(body))
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		jsonoutput.OutputErrorAsJSON(err, "Error reading response body")
+		return
 	}
+
+	// Create a response object
+	response := map[string]interface{}{
+		"status_code": resp.StatusCode,
+		"status":      resp.Status,
+	}
+
+	// If there's a response body, include it
+	if len(body) > 0 {
+		var jsonBody interface{}
+		if err := json.Unmarshal(body, &jsonBody); err == nil {
+			response["response_body"] = jsonBody
+		} else {
+			response["response_body"] = string(body)
+		}
+	}
+
+	// Output only the JSON response
+	jsonoutput.OutputJSON(response)
 }
 
 func init() {

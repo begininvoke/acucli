@@ -50,6 +50,8 @@ func ReadStdin() []string {
 	return inputArray
 }
 
+// PrintStructFields is deprecated. Use jsonoutput.OutputJSON instead.
+// This function is kept for backward compatibility.
 func PrintStructFields(s interface{}) {
 	v := reflect.ValueOf(s)
 

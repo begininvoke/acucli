@@ -8,13 +8,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"github.com/tosbaa/acucli/helpers/filehelper"
 	"github.com/tosbaa/acucli/helpers/httpclient"
-	"github.com/ttacon/chalk"
+	"github.com/tosbaa/acucli/helpers/jsonoutput"
 )
 
 type responseBody struct {
@@ -57,43 +55,45 @@ var TargetCmd = &cobra.Command{
 	Long:  `Retrieve target information from id flag`,
 	Run: func(cmd *cobra.Command, args []string) {
 		id, _ = cmd.Flags().GetString("id")
-		responseCode, respBody := GetTargetRequest(id)
-		if responseCode == 200 {
-			filehelper.PrintStructFields(respBody)
-		} else {
-			fmt.Fprintf(os.Stderr, "%sTarget not found%s\n", chalk.Red, chalk.Reset)
+		if id == "" {
+			jsonoutput.OutputErrorAsJSON(fmt.Errorf("target ID is required"), "Error")
+			return
 		}
-
+		GetTargetRequest(id)
 	},
 }
 
-func GetTargetRequest(id string) (int, responseBody) {
-	var respBody responseBody
+func GetTargetRequest(id string) {
 	req, err := http.NewRequest("GET", fmt.Sprintf("%s%s%s", viper.GetString("URL"), "/targets/", id), nil)
 	if err != nil {
-		fmt.Println("Error creating request:", err)
-		return 404, respBody
+		jsonoutput.OutputErrorAsJSON(err, "Error creating request")
+		return
 	}
 
 	// Perform the request using the custom client
 	resp, err := httpclient.MyHTTPClient.Do(req)
 	if err != nil {
-		fmt.Println("Error making request:", err)
-		return 404, respBody
+		jsonoutput.OutputErrorAsJSON(err, "Error making request")
+		return
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
 
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		jsonoutput.OutputErrorAsJSON(err, "Error reading response body")
+		return
+	}
+
+	// Check if the response is valid JSON
+	var respBody responseBody
 	err = json.Unmarshal(body, &respBody)
 	if err != nil {
-		fmt.Println("Error parsing JSON:", err)
-		return 404, respBody
+		jsonoutput.OutputErrorAsJSON(err, "Error parsing JSON")
+		return
 	}
-	if resp.StatusCode == 404 {
-		return 404, respBody
-	} else {
-		return 200, respBody
-	}
+
+	// Output only the JSON response
+	jsonoutput.OutputRawJSON(body)
 }
 
 func init() {

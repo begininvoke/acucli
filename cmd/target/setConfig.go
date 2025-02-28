@@ -9,14 +9,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"github.com/tosbaa/acucli/helpers/filehelper"
 	"github.com/tosbaa/acucli/helpers/httpclient"
-	"github.com/ttacon/chalk"
+	"github.com/tosbaa/acucli/helpers/jsonoutput"
 )
 
 type configRequestBody struct {
@@ -56,44 +55,51 @@ var SetConfigCmd = &cobra.Command{
 	`,
 	Run: func(cmd *cobra.Command, args []string) {
 		input := filehelper.ReadStdin()
-		noIssues := true
+		if input == nil || len(input) == 0 {
+			jsonoutput.OutputErrorAsJSON(fmt.Errorf("no input provided"), "Error")
+			return
+		}
+
+		results := make(map[string]interface{})
 		for _, id := range input {
-			responseCode := setConfigRequest(id)
-			if responseCode != 204 {
-				fmt.Fprintf(os.Stderr, "%sProblem occurred%s\n", chalk.Red, chalk.Reset)
-				noIssues = false
-				break
+			statusCode, responseBody := setConfigRequest(id)
+			results[id] = map[string]interface{}{
+				"status_code": statusCode,
+				"response":    responseBody,
 			}
 		}
 
-		// Print a message if no issues were encountered
-		if noIssues {
-			fmt.Println("Successfully configured targets")
-		}
+		// Output only the JSON response
+		jsonoutput.OutputJSON(results)
 	},
 }
 
-func setConfigRequest(id string) int {
+func setConfigRequest(id string) (int, string) {
 	configBody := defineConfig()
-	requestJson, _ := json.Marshal(configBody)
+	requestJson, err := json.Marshal(configBody)
+	if err != nil {
+		return 500, fmt.Sprintf("Error creating JSON request: %v", err)
+	}
 
 	req, err := http.NewRequest("PATCH", fmt.Sprintf("%s/targets/%s/configuration", viper.GetString("URL"), id), bytes.NewBuffer(requestJson))
 	req.Header.Set("Content-Type", "application/json")
 	if err != nil {
-		fmt.Println("Error creating request:", err)
-		return 500
+		return 500, fmt.Sprintf("Error creating request: %v", err)
 	}
 
 	// Perform the request using the custom client
-	resp, _ := httpclient.MyHTTPClient.Do(req)
-	body, _ := io.ReadAll(resp.Body)
-	fmt.Print(string(body))
-
+	resp, err := httpclient.MyHTTPClient.Do(req)
 	if err != nil {
-		fmt.Println("Error making request:", err)
-		return resp.StatusCode
+		return 500, fmt.Sprintf("Error making request: %v", err)
 	}
-	return resp.StatusCode
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return resp.StatusCode, fmt.Sprintf("Error reading response body: %v", err)
+	}
+
+	return resp.StatusCode, string(body)
 }
 
 func getConfigAsSlice(key string) []string {

@@ -8,13 +8,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"github.com/tosbaa/acucli/cmd/target"
 	"github.com/tosbaa/acucli/helpers/httpclient"
-	"github.com/ttacon/chalk"
+	"github.com/tosbaa/acucli/helpers/jsonoutput"
 )
 
 type idResponseBody struct {
@@ -32,45 +30,45 @@ var TargetGroupCmd = &cobra.Command{
 	`,
 	Run: func(cmd *cobra.Command, args []string) {
 		id, _ := cmd.Flags().GetString("id")
-		responseCode, respBody := GetTargetGroupRequest(id)
-		if responseCode == 200 {
-			for _, targetID := range respBody.TargetIDList {
-				_, target := target.GetTargetRequest(targetID)
-				fmt.Printf("%s\t%s\n", target.Address, targetID)
-			}
-		} else {
-			fmt.Fprintf(os.Stderr, "%sTargetGroup not found%s\n", chalk.Red, chalk.Reset)
+		if id == "" {
+			jsonoutput.OutputErrorAsJSON(fmt.Errorf("target group ID is required"), "Error")
+			return
 		}
-
+		GetTargetGroupRequest(id)
 	},
 }
 
-func GetTargetGroupRequest(id string) (int, idResponseBody) {
-	var respBody idResponseBody
+func GetTargetGroupRequest(id string) {
 	req, err := http.NewRequest("GET", fmt.Sprintf("%s/target_groups/%s/targets", viper.GetString("URL"), id), nil)
 	if err != nil {
-		fmt.Println("Error creating request:", err)
-		return 404, respBody
+		jsonoutput.OutputErrorAsJSON(err, "Error creating request")
+		return
 	}
 
 	// Perform the request using the custom client
 	resp, err := httpclient.MyHTTPClient.Do(req)
 	if err != nil {
-		fmt.Println("Error making request:", err)
-		return 404, respBody
+		jsonoutput.OutputErrorAsJSON(err, "Error making request")
+		return
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
 
-	err = json.Unmarshal(body, &respBody)
-
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		fmt.Println("Error making request:", err)
-		return 404, respBody
-	} else {
-		return 200, respBody
-
+		jsonoutput.OutputErrorAsJSON(err, "Error reading response body")
+		return
 	}
+
+	// Check if the response is valid JSON
+	var respBody idResponseBody
+	err = json.Unmarshal(body, &respBody)
+	if err != nil {
+		jsonoutput.OutputErrorAsJSON(err, "Error parsing JSON")
+		return
+	}
+
+	// Output only the JSON response
+	jsonoutput.OutputRawJSON(body)
 }
 
 func init() {

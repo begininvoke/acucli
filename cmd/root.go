@@ -25,6 +25,9 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/tosbaa/acucli/cmd/auto"
+	"github.com/tosbaa/acucli/cmd/export"
+	"github.com/tosbaa/acucli/cmd/report"
 	"github.com/tosbaa/acucli/cmd/scan"
 	"github.com/tosbaa/acucli/cmd/scanProfile"
 	"github.com/tosbaa/acucli/cmd/target"
@@ -62,6 +65,9 @@ func init() {
 	RootCmd.AddCommand(targetGroup.TargetGroupCmd)
 	RootCmd.AddCommand(scanProfile.ScanProfileCmd)
 	RootCmd.AddCommand(scan.ScanCmd)
+	RootCmd.AddCommand(report.ReportCmd)
+	RootCmd.AddCommand(auto.AutoCmd)
+	RootCmd.AddCommand(export.ExportCmd)
 	cobra.OnInitialize(initConfig)
 
 	// Here you will define your flags and configuration settings.
@@ -81,14 +87,19 @@ func initConfig() {
 		// Use config file from the flag.
 		viper.SetConfigFile(cfgFile)
 	} else {
+		// Get current working directory
+		currentDir, err := os.Getwd()
+		cobra.CheckErr(err)
+
 		// Find home directory.
 		home, err := os.UserHomeDir()
 		cobra.CheckErr(err)
 
-		// Search config in home directory with name ".acucli" (without extension).
+		// Search config in home directory and current directory
 		viper.AddConfigPath(home)
+		viper.AddConfigPath(currentDir)
 		viper.SetConfigType("yaml")
-		viper.SetConfigName(".acucli")
+		viper.SetConfigName("acucli")
 	}
 
 	viper.AutomaticEnv() // read in environment variables that match

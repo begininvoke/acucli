@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -16,7 +15,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"github.com/tosbaa/acucli/helpers/httpclient"
-	"github.com/ttacon/chalk"
+	"github.com/tosbaa/acucli/helpers/jsonoutput"
 )
 
 type ScanProfile struct {
@@ -57,86 +56,128 @@ var ScanProfileCmd = &cobra.Command{
 	`,
 	Run: func(cmd *cobra.Command, args []string) {
 		id, _ = cmd.Flags().GetString("id")
+		if id == "" {
+			jsonoutput.OutputErrorAsJSON(fmt.Errorf("scan profile ID is required"), "Error")
+			return
+		}
+
 		if cmd.Flags().Changed("export") {
 			output, _ := cmd.Flags().GetString("output")
 			exportScanProfile(id, output)
 		} else {
-			responseCode, respBody := GetScanProfileRequest(id)
-			if responseCode == 200 {
-				fmt.Println(respBody)
-			} else {
-				fmt.Fprintf(os.Stderr, "%sScan Profile not found%s\n", chalk.Red, chalk.Reset)
-			}
+			GetScanProfileRequest(id)
 		}
-
 	},
 }
 
 func exportScanProfile(id string, path string) {
-	respCode, scanProfile := GetScanProfileRequest(id)
-	var writePath string
-	if respCode == 404 {
-		fmt.Fprintf(os.Stderr, "Scan Profile not found\n")
-	} else {
-		jsonData, err := json.MarshalIndent(scanProfile, "", "  ")
-		if err != nil {
-			log.Fatalf("Error serializing struct to JSON: %v", err)
-		} else {
-			filename := fmt.Sprintf("%s.json", scanProfile.Name)
-			// Ensure filename is valid and not empty
-			if filename == ".json" {
-				filename = "default.json" // Fallback filename
-			}
-
-			if path == "" {
-				workingDir, err := os.Getwd()
-				if err != nil {
-					log.Fatalf("Error getting current working directory: %v", err)
-				}
-				writePath = filepath.Join(workingDir, filename)
-			} else {
-				// Check if the given path is a directory
-				if stat, err := os.Stat(path); err == nil && stat.IsDir() {
-					writePath = filepath.Join(path, filename)
-				} else {
-					writePath = path
-				}
-			}
-			err = os.WriteFile(writePath, jsonData, 0644)
-			if err != nil {
-				log.Fatalf("Error writing JSON to file: %v", err)
-			}
-		}
-	}
-}
-
-func GetScanProfileRequest(id string) (int, ScanProfile) {
-	var respBody ScanProfile
 	req, err := http.NewRequest("GET", fmt.Sprintf("%s%s%s", viper.GetString("URL"), "/scanning_profiles/", id), nil)
 	if err != nil {
-		fmt.Println("Error creating request:", err)
-		return 404, respBody
+		jsonoutput.OutputErrorAsJSON(err, "Error creating request")
+		return
 	}
 
 	// Perform the request using the custom client
 	resp, err := httpclient.MyHTTPClient.Do(req)
 	if err != nil {
-		fmt.Println("Error making request:", err)
-		return 404, respBody
+		jsonoutput.OutputErrorAsJSON(err, "Error making request")
+		return
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
 
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		jsonoutput.OutputErrorAsJSON(err, "Error reading response body")
+		return
+	}
+
+	// Check if the response is valid JSON
+	var scanProfile ScanProfile
+	err = json.Unmarshal(body, &scanProfile)
+	if err != nil {
+		jsonoutput.OutputErrorAsJSON(err, "Error parsing JSON")
+		return
+	}
+
+	if resp.StatusCode == 404 {
+		jsonoutput.OutputErrorAsJSON(fmt.Errorf("scan profile not found"), "Error")
+		return
+	}
+
+	jsonData, err := json.MarshalIndent(scanProfile, "", "  ")
+	if err != nil {
+		jsonoutput.OutputErrorAsJSON(err, "Error serializing struct to JSON")
+		return
+	}
+
+	filename := fmt.Sprintf("%s.json", scanProfile.Name)
+	// Ensure filename is valid and not empty
+	if filename == ".json" {
+		filename = "default.json" // Fallback filename
+	}
+
+	var writePath string
+	if path == "" {
+		workingDir, err := os.Getwd()
+		if err != nil {
+			jsonoutput.OutputErrorAsJSON(err, "Error getting current working directory")
+			return
+		}
+		writePath = filepath.Join(workingDir, filename)
+	} else {
+		// Check if the given path is a directory
+		if stat, err := os.Stat(path); err == nil && stat.IsDir() {
+			writePath = filepath.Join(path, filename)
+		} else {
+			writePath = path
+		}
+	}
+
+	err = os.WriteFile(writePath, jsonData, 0644)
+	if err != nil {
+		jsonoutput.OutputErrorAsJSON(err, "Error writing JSON to file")
+		return
+	}
+
+	// Output success as JSON
+	jsonoutput.OutputJSON(map[string]interface{}{
+		"status":       "success",
+		"file_path":    writePath,
+		"scan_profile": scanProfile,
+	})
+}
+
+func GetScanProfileRequest(id string) {
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s%s%s", viper.GetString("URL"), "/scanning_profiles/", id), nil)
+	if err != nil {
+		jsonoutput.OutputErrorAsJSON(err, "Error creating request")
+		return
+	}
+
+	// Perform the request using the custom client
+	resp, err := httpclient.MyHTTPClient.Do(req)
+	if err != nil {
+		jsonoutput.OutputErrorAsJSON(err, "Error making request")
+		return
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		jsonoutput.OutputErrorAsJSON(err, "Error reading response body")
+		return
+	}
+
+	// Check if the response is valid JSON
+	var respBody ScanProfile
 	err = json.Unmarshal(body, &respBody)
 	if err != nil {
-		fmt.Println("Error parsing JSON:", err)
-		return 404, respBody
+		jsonoutput.OutputErrorAsJSON(err, "Error parsing JSON")
+		return
 	}
-	if resp.StatusCode == 404 {
-		return 404, respBody
-	} else {
-		return 200, respBody
-	}
+
+	// Output only the JSON response
+	jsonoutput.OutputRawJSON(body)
 }
 
 func init() {

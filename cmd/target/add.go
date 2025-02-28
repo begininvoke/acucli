@@ -7,13 +7,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"github.com/tosbaa/acucli/helpers/filehelper"
 	"github.com/tosbaa/acucli/helpers/httpclient"
-	"github.com/ttacon/chalk"
+	"github.com/tosbaa/acucli/helpers/jsonoutput"
 )
 
 type Target struct {
@@ -56,54 +57,41 @@ var AddCmd = &cobra.Command{
 			}
 			makeRequest(targets, groups)
 		} else {
-			fmt.Println("Please provide addresses to add")
+			jsonoutput.OutputErrorAsJSON(fmt.Errorf("no input provided"), "Error")
 		}
 	},
 }
 
 func makeRequest(t []Target, groups []string) {
 	postBody := PostBody{Targets: t, Groups: groups}
-	requestJson, _ := json.Marshal(postBody)
+	requestJson, err := json.Marshal(postBody)
+	if err != nil {
+		jsonoutput.OutputErrorAsJSON(err, "Error creating JSON request")
+		return
+	}
+
 	req, err := http.NewRequest("POST", fmt.Sprintf("%s%s", viper.GetString("URL"), "/targets/add"), bytes.NewBuffer(requestJson))
 	if err != nil {
-		fmt.Println("Error creating request:", err)
+		jsonoutput.OutputErrorAsJSON(err, "Error creating request")
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := httpclient.MyHTTPClient.Do(req)
 	if err != nil {
-		fmt.Println("Error making request:", err)
+		jsonoutput.OutputErrorAsJSON(err, "Error making request")
 		return
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusOK {
-		var response struct {
-			Targets []struct {
-				Address     string `json:"address"`
-				Criticality int    `json:"criticality"`
-				Description string `json:"description"`
-				FQDN        string `json:"fqdn"`
-				Type        string `json:"type"`
-				Domain      string `json:"domain"`
-				TargetID    string `json:"target_id"`
-				TargetType  string `json:"target_type"`
-			} `json:"targets"`
-		}
-
-		decoder := json.NewDecoder(resp.Body)
-		if err := decoder.Decode(&response); err != nil {
-			fmt.Println("Error decoding response body:", err)
-			return
-		}
-
-		fmt.Println(chalk.Green, chalk.Bold.TextStyle("Successfully Added Targets:"), chalk.Reset)
-		for _, target := range response.Targets {
-			fmt.Printf("%s%s\t%s%s\n", chalk.Green, target.Address, target.TargetID, chalk.Reset)
-		}
-	} else {
-		fmt.Println("Error:", resp.Status)
+	// Read the response body into a variable
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		jsonoutput.OutputErrorAsJSON(err, "Error reading response body")
+		return
 	}
+
+	// Output only the JSON response
+	jsonoutput.OutputRawJSON(responseBody)
 }
 
 func init() {

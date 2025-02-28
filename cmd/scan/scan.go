@@ -7,14 +7,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"github.com/tosbaa/acucli/helpers/filehelper"
 	"github.com/tosbaa/acucli/helpers/httpclient"
-	"github.com/ttacon/chalk"
+	"github.com/tosbaa/acucli/helpers/jsonoutput"
 )
 
 type postBody struct {
@@ -41,57 +41,70 @@ var ScanCmd = &cobra.Command{
 cat target_ids.txt | acucli scan --scanProfileID=47973ea9-018b-4294-9903-bb1cf3b1e886`,
 	Run: func(cmd *cobra.Command, args []string) {
 		targets := filehelper.ReadStdin()
+		if targets == nil || len(targets) == 0 {
+			jsonoutput.OutputErrorAsJSON(fmt.Errorf("no target IDs provided"), "Error")
+			return
+		}
+
 		scanProfileID, _ := cmd.Flags().GetString("scanProfileID")
-		var responseCode int
+		if scanProfileID == "" {
+			jsonoutput.OutputErrorAsJSON(fmt.Errorf("scan profile ID is required"), "Error")
+			return
+		}
+
+		results := make(map[string]interface{})
 		for _, target := range targets {
-			responseCode = startScan(target, scanProfileID)
-			if responseCode == 200 {
-				fmt.Printf("%sScan started: %s%s\n", chalk.Green, target, chalk.Reset)
-			} else {
-				fmt.Printf("%sError occured while starting scan%s\n", chalk.Red, chalk.Reset)
+			statusCode, responseBody := startScan(target, scanProfileID)
+			results[target] = map[string]interface{}{
+				"status_code": statusCode,
+				"response":    responseBody,
 			}
 		}
+
+		// Output only the JSON response
+		jsonoutput.OutputJSON(results)
 	},
 }
 
-func startScan(targetID string, scanProfileID string) int {
+func startScan(targetID string, scanProfileID string) (int, string) {
 	postBody := postBody{ProfileID: scanProfileID, Incremental: false, Schedule: Schedule{Disable: false, TimeSensitive: false, StartDate: nil}}
-
 	postBody.TargetID = targetID
-	requestJson, _ := json.Marshal(postBody)
+
+	requestJson, err := json.Marshal(postBody)
+	if err != nil {
+		return 500, fmt.Sprintf("Error creating JSON request: %v", err)
+	}
+
 	req, err := http.NewRequest("POST", fmt.Sprintf("%s%s", viper.GetString("URL"), "/scans"), bytes.NewBuffer(requestJson))
 	if err != nil {
-		fmt.Println("Error creating request:", err)
-		fmt.Println(err)
-		return 500
+		return 500, fmt.Sprintf("Error creating request: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+
 	resp, err := httpclient.MyHTTPClient.Do(req)
 	if err != nil {
-		fmt.Println("Error making request:", err)
-		fmt.Println(err)
-		return 500
+		return 500, fmt.Sprintf("Error making request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return resp.StatusCode, fmt.Sprintf("Error reading response body: %v", err)
 	}
 
-	if resp.StatusCode != 201 {
-		body, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			// handle error
-			fmt.Println(err)
-		}
-
-		// Convert the body to type string
-		fmt.Println(string(body))
-		return resp.StatusCode
-	} else {
-		return 200
-	}
-
+	return resp.StatusCode, string(body)
 }
 
 func init() {
 	ScanCmd.Flags().StringVarP(&scanProfileId, "scanProfileID", "", "", "scanProfile ID")
 	ScanCmd.MarkFlagRequired("scanProfileID")
+
+	ScanCmd.AddCommand(ListCmd)
+	ScanCmd.AddCommand(GetCmd)
+	ScanCmd.AddCommand(RemoveCmd)
+	ScanCmd.AddCommand(ResultsCmd)
+	ScanCmd.AddCommand(VulnerabilitiesCmd)
+	ScanCmd.AddCommand(TechnologiesCmd)
 	// Here you will define your flags and configuration settings.
 
 	// Cobra supports Persistent Flags which will work for this command

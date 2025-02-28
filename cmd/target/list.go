@@ -10,6 +10,7 @@ import (
 	"net/http"
 
 	"github.com/tosbaa/acucli/helpers/httpclient"
+	"github.com/tosbaa/acucli/helpers/jsonoutput"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -63,29 +64,33 @@ var ListCmd = &cobra.Command{
 		// Create an HTTP GET request using the custom client
 		req, err := http.NewRequest("GET", fmt.Sprintf("%s%s", viper.GetString("URL"), "/targets"), nil)
 		if err != nil {
-			fmt.Println("Error creating request:", err)
+			jsonoutput.OutputErrorAsJSON(err, "Error creating request")
 			return
 		}
 
 		// Perform the request using the custom client
 		resp, err := httpclient.MyHTTPClient.Do(req)
 		if err != nil {
-			fmt.Println("Error making request:", err)
+			jsonoutput.OutputErrorAsJSON(err, "Error making request")
 			return
 		}
 		defer resp.Body.Close()
-		body, _ := io.ReadAll(resp.Body)
-
-		var targetList TargetList
-		err = json.Unmarshal(body, &targetList)
+		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			fmt.Println("Error parsing JSON:", err)
+			jsonoutput.OutputErrorAsJSON(err, "Error reading response body")
 			return
 		}
 
-		for _, target := range targetList.Targets {
-			fmt.Printf("%s\t%s\n", target.Address, target.TargetID)
+		// Check if the response is valid JSON
+		var targetList TargetList
+		err = json.Unmarshal(body, &targetList)
+		if err != nil {
+			jsonoutput.OutputErrorAsJSON(err, "Error parsing JSON")
+			return
 		}
+
+		// Output only the JSON response
+		jsonoutput.OutputRawJSON(body)
 	},
 }
 

@@ -6,3 +6,5 @@ test.txt
 /build
 .DS_Store
 build.sh
+acucli
+acucli.yaml

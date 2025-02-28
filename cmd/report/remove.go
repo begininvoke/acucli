@@ -1,12 +1,13 @@
 /*
-Copyright © 2023 NAME HERE <EMAIL ADDRESS>
+Copyright © 2024 NAME HERE <EMAIL ADDRESS>
 */
-package target
+package report
 
 import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/spf13/cobra"
@@ -16,42 +17,48 @@ import (
 	"github.com/tosbaa/acucli/helpers/jsonoutput"
 )
 
-type RemovePostBody struct {
-	TargetIDList []string `json:"target_id_list"`
+type RemoveReportRequest struct {
+	ReportIDList []string `json:"report_id_list"`
 }
 
 // RemoveCmd represents the remove command
 var RemoveCmd = &cobra.Command{
 	Use:   "remove",
-	Short: "Removes target",
-	Long: `Takes input as stdin. Example:
+	Short: "Remove reports",
+	Long: `Remove reports by ID. Takes report IDs from stdin. Example:
 
-	echo "9797f3aa-80f7-41a6-9e24-4926b35147cf" | acucli target remove : Removes the target
-	acucli target list | echo $(awk '{print $2}') | acucli target remove : Removes all targets`,
+echo "report_id_here" | acucli report remove
+cat report_ids.txt | acucli report remove : Removes multiple reports`,
 	Run: func(cmd *cobra.Command, args []string) {
 		input := filehelper.ReadStdin()
-		if input != nil {
-			makeDeleteRequest(input)
-		} else {
-			jsonoutput.OutputErrorAsJSON(fmt.Errorf("no input provided"), "Error")
+		if input == nil || len(input) == 0 {
+			jsonoutput.OutputErrorAsJSON(fmt.Errorf("no report IDs provided"), "Error")
+			return
 		}
+
+		removeReports(input)
 	},
 }
 
-func makeDeleteRequest(ids []string) {
-	postBody := RemovePostBody{TargetIDList: ids}
-	requestJson, err := json.Marshal(postBody)
+func removeReports(reportIDs []string) {
+	request := RemoveReportRequest{
+		ReportIDList: reportIDs,
+	}
+
+	requestJson, err := json.Marshal(request)
 	if err != nil {
 		jsonoutput.OutputErrorAsJSON(err, "Error creating JSON request")
 		return
 	}
 
-	req, err := http.NewRequest("POST", fmt.Sprintf("%s%s", viper.GetString("URL"), "/targets/delete"), bytes.NewBuffer(requestJson))
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s%s", viper.GetString("URL"), "/reports/delete"), bytes.NewBuffer(requestJson))
 	if err != nil {
 		jsonoutput.OutputErrorAsJSON(err, "Error creating request")
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
+
+	// Perform the request using the custom client
 	resp, err := httpclient.MyHTTPClient.Do(req)
 	if err != nil {
 		jsonoutput.OutputErrorAsJSON(err, "Error making request")
@@ -59,15 +66,22 @@ func makeDeleteRequest(ids []string) {
 	}
 	defer resp.Body.Close()
 
-	// Create a response object
-	response := map[string]interface{}{
-		"status_code": resp.StatusCode,
-		"status":      resp.Status,
-		"removed_ids": ids,
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		jsonoutput.OutputErrorAsJSON(err, "Error reading response body")
+		return
+	}
+
+	// Check if the response is valid JSON
+	var responseBody interface{}
+	err = json.Unmarshal(body, &responseBody)
+	if err != nil {
+		jsonoutput.OutputErrorAsJSON(err, "Error parsing JSON")
+		return
 	}
 
 	// Output only the JSON response
-	jsonoutput.OutputJSON(response)
+	jsonoutput.OutputRawJSON(body)
 }
 
 func init() {
