@@ -125,313 +125,16 @@ This command performs the following steps:
 9. Download the report/export files
 `,
 	Run: func(cmd *cobra.Command, args []string) {
-		if targetURL == "" {
-			jsonoutput.OutputErrorAsJSON(fmt.Errorf("target URL is required"), "Error")
-			return
-		}
-
-		if scanProfileID == "" {
-			// Use default scan profile ID if not provided
-			scanProfileID = "11111111-1111-1111-1111-111111111111"
-		}
-
-		if reportTemplateID == "" && outputFormat != "csv" {
-			// Use default report template ID if not provided and format is not CSV
-			reportTemplateID = "11111111-1111-1111-1111-111111111126"
-		}
-
-		// Create output directory if specified and doesn't exist
-		if outputPath != "" {
-			// Extract directory part from the output path
-			outputDir := filepath.Dir(outputPath)
-			if outputDir != "." {
-				err := os.MkdirAll(outputDir, 0755)
-				if err != nil {
-					jsonoutput.OutputErrorAsJSON(err, "Error creating output directory")
-					return
-				}
-			}
-		}
-
-		// Step 1: Add target
-		targetID, err := addTarget(targetURL)
-		if err != nil {
-			jsonoutput.OutputErrorAsJSON(err, "Error adding target")
-			return
-		}
-
-		// Log progress
-		progressLog := map[string]interface{}{
-			"step":      "1. Add target",
-			"target_id": targetID,
-			"status":    "completed",
-		}
-		jsonoutput.OutputJSON(progressLog)
-
-		// Step 2: Get target to check if it exists
-		targetExists, err := checkTargetExists(targetID)
-		if err != nil || !targetExists {
-			jsonoutput.OutputErrorAsJSON(err, "Error checking target existence")
-			// Clean up
-			removeTarget(targetID)
-			return
-		}
-
-		// Log progress
-		progressLog = map[string]interface{}{
-			"step":      "2. Check target exists",
-			"target_id": targetID,
-			"status":    "completed",
-		}
-		jsonoutput.OutputJSON(progressLog)
-
-		// Step 3: Add scan with scan profile ID
-		scanID, err := startScan(targetID, scanProfileID)
-		if err != nil {
-			jsonoutput.OutputErrorAsJSON(err, "Error starting scan")
-			// Clean up in the specified order
-			removeTarget(targetID)
-			return
-		}
-
-		// Log progress
-		progressLog = map[string]interface{}{
-			"step":    "3. Start scan",
-			"scan_id": scanID,
-			"status":  "completed",
-		}
-		jsonoutput.OutputJSON(progressLog)
-
-		// Step 4: Check scan ID
-		scanExists, err := checkScanExists(scanID)
-		if err != nil || !scanExists {
-			jsonoutput.OutputErrorAsJSON(err, "Error checking scan existence")
-			// Clean up in the specified order
-			removeScan(scanID)
-			removeTarget(targetID)
-			return
-		}
-
-		// Log progress
-		progressLog = map[string]interface{}{
-			"step":    "4. Check scan exists",
-			"scan_id": scanID,
-			"status":  "completed",
-		}
-		jsonoutput.OutputJSON(progressLog)
-
-		// Step 5: Wait for scan status to be completed
-		scanCompleted, err := waitForScanCompletion(scanID, waitTimeout)
-		if err != nil || !scanCompleted {
-			jsonoutput.OutputErrorAsJSON(err, "Error waiting for scan completion")
-			// Clean up in the specified order
-			removeScan(scanID)
-			removeTarget(targetID)
-			return
-		}
-
-		// Log progress
-		progressLog = map[string]interface{}{
-			"step":    "5. Wait for scan completion",
-			"scan_id": scanID,
-			"status":  "completed",
-		}
-		jsonoutput.OutputJSON(progressLog)
-
-		// Step 6: Generate report or create export based on format
-		var reportID string
-		var downloadLinks []string
-
-		if strings.ToLower(outputFormat) == "csv" {
-			// Create export for CSV format
-			reportID, err = createExport("21111111-1111-1111-1111-111111111141", []string{scanID})
-			if err != nil {
-				jsonoutput.OutputErrorAsJSON(err, "Error creating export")
-				// Clean up in the specified order
-				removeScan(scanID)
-				removeTarget(targetID)
-				return
-			}
-
-			// Log progress
-			progressLog = map[string]interface{}{
-				"step":      "6. Create export",
-				"report_id": reportID,
-				"status":    "completed",
-			}
-			jsonoutput.OutputJSON(progressLog)
-
-		} else {
-			// Generate HTML report
-			reportID, err = generateReport(reportTemplateID, "Auto-generated report", "scan_result", []string{scanID})
-			if err != nil {
-				jsonoutput.OutputErrorAsJSON(err, "Error generating report")
-				// Clean up in the specified order
-				removeScan(scanID)
-				removeTarget(targetID)
-				return
-			}
-
-			// Log progress
-			progressLog = map[string]interface{}{
-				"step":      "6. Generate report",
-				"report_id": reportID,
-				"status":    "completed",
-			}
-			jsonoutput.OutputJSON(progressLog)
-
-		}
-		// Step 7: Check if report exists
-		reportExists, err := checkReportExists(reportID)
-		if err != nil || !reportExists {
-			jsonoutput.OutputErrorAsJSON(err, "Error checking report existence")
-			// Clean up in the specified order
-			removeReport(reportID)
-			removeScan(scanID)
-			removeTarget(targetID)
-			return
-		}
-
-		// Log progress
-		progressLog = map[string]interface{}{
-			"step":      "7. Check report exists",
-			"report_id": reportID,
-			"status":    "completed",
-		}
-		jsonoutput.OutputJSON(progressLog)
-		// Step 8: Wait for report completion and get download links
-		downloadLinks, err = waitForReportCompletion(reportID, waitTimeout)
-		if err != nil || len(downloadLinks) == 0 {
-			jsonoutput.OutputErrorAsJSON(err, "Error waiting for report completion")
-			// Clean up in the specified order
-			removeReport(reportID)
-			removeScan(scanID)
-			removeTarget(targetID)
-			return
-		}
-		// Log progress
-		progressLog = map[string]interface{}{
-			"step":           "8. Wait for completion",
-			"report_id":      reportID,
-			"download_links": downloadLinks,
-			"status":         "completed",
-		}
-		jsonoutput.OutputJSON(progressLog)
-
-		// Step 9: Download report/export files
-		downloadedFiles, err := downloadReportFiles(downloadLinks, outputPath)
-		if err != nil {
-			jsonoutput.OutputErrorAsJSON(err, "Error downloading files")
-			//// Clean up in the specified order
-			//if strings.ToLower(outputFormat) == "csv" {
-			//	removeExport(reportID)
-			//} else {
-			removeReport(reportID)
-			//}
-			removeScan(scanID)
-			removeTarget(targetID)
-			return
-		} else {
-			// Log progress
-			progressLog = map[string]interface{}{
-				"step":             "9. Download files",
-				"downloaded_files": downloadedFiles,
-				"status":           "completed",
-			}
-			jsonoutput.OutputJSON(progressLog)
-		}
-
-		// Final output with all IDs
-		result := map[string]interface{}{
-			"target_id": targetID,
-			"scan_id":   scanID,
-			"report_id": reportID,
-			"files":     downloadedFiles,
-			"status":    "success",
-			"message":   "Auto process completed successfully",
-		}
-		jsonoutput.OutputJSON(result)
-
-		// Clean up resources after successful download
-		cleanupLog := map[string]interface{}{
-			"step":    "Cleanup",
-			"status":  "in_progress",
-			"message": "Removing resources after successful download",
-		}
-		jsonoutput.OutputJSON(cleanupLog)
-
-		// Remove in the specified order: report first, then scan, then target
-		var cleanupErrors []string
-
-		// Remove report/export
-		//if strings.ToLower(outputFormat) == "csv" {
-		//	if err := removeExport(reportID); err != nil {
-		//		cleanupErrors = append(cleanupErrors, fmt.Sprintf("Failed to remove export: %v", err))
-		//	} else {
-		//		jsonoutput.OutputJSON(map[string]interface{}{
-		//			"step":      "Cleanup - Remove export",
-		//			"export_id": reportID,
-		//			"status":    "completed",
-		//		})
-		//	}
-		//} else {
-		if err := removeReport(reportID); err != nil {
-			cleanupErrors = append(cleanupErrors, fmt.Sprintf("Failed to remove report: %v", err))
-		} else {
-			jsonoutput.OutputJSON(map[string]interface{}{
-				"step":      "Cleanup - Remove report",
-				"report_id": reportID,
-				"status":    "completed",
-			})
-		}
-		//}
-
-		// Remove scan
-		if err := removeScan(scanID); err != nil {
-			cleanupErrors = append(cleanupErrors, fmt.Sprintf("Failed to remove scan: %v", err))
-		} else {
-			jsonoutput.OutputJSON(map[string]interface{}{
-				"step":    "Cleanup - Remove scan",
-				"scan_id": scanID,
-				"status":  "completed",
-			})
-		}
-
-		// Remove target
-		if err := removeTarget(targetID); err != nil {
-			cleanupErrors = append(cleanupErrors, fmt.Sprintf("Failed to remove target: %v", err))
-		} else {
-			jsonoutput.OutputJSON(map[string]interface{}{
-				"step":      "Cleanup - Remove target",
-				"target_id": targetID,
-				"status":    "completed",
-			})
-		}
-
-		// Report any cleanup errors
-		if len(cleanupErrors) > 0 {
-			jsonoutput.OutputJSON(map[string]interface{}{
-				"step":    "Cleanup",
-				"status":  "warning",
-				"message": "Some cleanup operations failed",
-				"errors":  cleanupErrors,
-			})
-		} else {
-			jsonoutput.OutputJSON(map[string]interface{}{
-				"step":    "Cleanup",
-				"status":  "completed",
-				"message": "All resources successfully removed",
-			})
-		}
 	},
 }
 
 // Add a target and return the target ID
 func addTarget(targetURL string) (string, error) {
+	fmt.Printf("Debug: Adding target with URL: %s\n", targetURL)
 	targets := []Target{
 		{
 			Address:     targetURL,
-			Description: "Auto-added target",
+			Description: "",
 			Type:        "default",
 			Criticality: 30,
 		},
@@ -444,43 +147,53 @@ func addTarget(targetURL string) (string, error) {
 
 	requestJson, err := json.Marshal(postBody)
 	if err != nil {
-		return "", fmt.Errorf("error creating JSON request: %v", err)
+		fmt.Printf("Debug: Error marshaling target request: %v\n", err)
+		return "", err
 	}
 
+	fmt.Printf("Debug: Making POST request to /targets/add with body: %s\n", string(requestJson))
 	req, err := http.NewRequest("POST", fmt.Sprintf("%s%s", viper.GetString("URL"), "/targets/add"), bytes.NewBuffer(requestJson))
 	if err != nil {
-		return "", fmt.Errorf("error creating request: %v", err)
+		fmt.Printf("Debug: Error creating target request: %v\n", err)
+		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := httpclient.MyHTTPClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("error making request: %v", err)
+		fmt.Printf("Debug: Error making target request: %v\n", err)
+		return "", err
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("error reading response body: %v", err)
+		fmt.Printf("Debug: Error reading target response body: %v\n", err)
+		return "", err
 	}
 
-	// Parse the response to get the target ID
-	var response map[string]interface{}
+	fmt.Printf("Debug: Target API response: %s\n", string(body))
+
+	var response struct {
+		Targets []struct {
+			TargetID string `json:"target_id"`
+		} `json:"targets"`
+	}
+
 	err = json.Unmarshal(body, &response)
 	if err != nil {
-		return "", fmt.Errorf("error parsing response: %v", err)
+		fmt.Printf("Debug: Error parsing target response: %v\n", err)
+		return "", err
 	}
 
-	// Extract target ID from the response
-	if targets, ok := response["targets"].([]interface{}); ok && len(targets) > 0 {
-		if target, ok := targets[0].(map[string]interface{}); ok {
-			if targetID, ok := target["target_id"].(string); ok {
-				return targetID, nil
-			}
-		}
+	if len(response.Targets) == 0 {
+		fmt.Println("Debug: No target ID in response")
+		return "", fmt.Errorf("no target ID in response")
 	}
 
-	return "", fmt.Errorf("could not extract target ID from response")
+	targetID := response.Targets[0].TargetID
+	fmt.Printf("Debug: Successfully added target with ID: %s\n", targetID)
+	return targetID, nil
 }
 
 // Check if a target exists
@@ -505,47 +218,63 @@ func checkTargetExists(targetID string) (bool, error) {
 
 // Start a scan and return the scan ID
 func startScan(targetID, scanProfileID string) (string, error) {
+	fmt.Printf("Debug: Starting scan for target ID: %s with profile ID: %s\n", targetID, scanProfileID)
+
+	schedule := ScanSchedule{
+		Disable:       true,
+		TimeSensitive: false,
+	}
+
 	postBody := ScanPostBody{
 		TargetID:    targetID,
 		ProfileID:   scanProfileID,
+		Schedule:    schedule,
 		Incremental: false,
-		Schedule: ScanSchedule{
-			Disable:       false,
-			TimeSensitive: false,
-			StartDate:     nil,
-		},
 	}
 
 	requestJson, err := json.Marshal(postBody)
 	if err != nil {
-		return "", fmt.Errorf("error creating JSON request: %v", err)
+		fmt.Printf("Debug: Error marshaling scan request: %v\n", err)
+		return "", err
 	}
 
+	fmt.Printf("Debug: Making POST request to /scans with body: %s\n", string(requestJson))
 	req, err := http.NewRequest("POST", fmt.Sprintf("%s%s", viper.GetString("URL"), "/scans"), bytes.NewBuffer(requestJson))
 	if err != nil {
-		return "", fmt.Errorf("error creating request: %v", err)
+		fmt.Printf("Debug: Error creating scan request: %v\n", err)
+		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := httpclient.MyHTTPClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("error making request: %v", err)
+		fmt.Printf("Debug: Error making scan request: %v\n", err)
+		return "", err
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("error reading response body: %v", err)
+		fmt.Printf("Debug: Error reading scan response body: %v\n", err)
+		return "", err
 	}
 
-	// Parse the response to get the scan ID
-	var scanResponse ScanResponse
-	err = json.Unmarshal(body, &scanResponse)
+	fmt.Printf("Debug: Scan API response: %s\n", string(body))
+
+	var response ScanResponse
+	err = json.Unmarshal(body, &response)
 	if err != nil {
-		return "", fmt.Errorf("error parsing response: %v", err)
+		fmt.Printf("Debug: Error parsing scan response: %v\n", err)
+		return "", err
 	}
 
-	return scanResponse.ScanID, nil
+	if response.ScanID == "" {
+		fmt.Println("Debug: No scan ID in response")
+		return "", fmt.Errorf("no scan ID in response")
+	}
+
+	fmt.Printf("Debug: Successfully started scan with ID: %s\n", response.ScanID)
+	return response.ScanID, nil
 }
 
 // Check if a scan exists
@@ -570,45 +299,56 @@ func checkScanExists(scanID string) (bool, error) {
 
 // Wait for scan completion
 func waitForScanCompletion(scanID string, timeoutSeconds int) (bool, error) {
-	startTime := time.Now()
-	timeout := time.Duration(timeoutSeconds) * time.Second
+	fmt.Printf("Debug: Waiting for scan completion. Scan ID: %s, Timeout: %d seconds\n", scanID, timeoutSeconds)
 
+	startTime := time.Now()
 	for {
-		// Check if timeout has been reached
-		if time.Since(startTime) > timeout {
-			return false, fmt.Errorf("timeout waiting for scan completion")
+		if time.Since(startTime) > time.Duration(timeoutSeconds)*time.Second {
+			fmt.Printf("Debug: Scan wait timed out after %d seconds\n", timeoutSeconds)
+			return false, nil
 		}
 
 		req, err := http.NewRequest("GET", fmt.Sprintf("%s/scans/%s", viper.GetString("URL"), scanID), nil)
 		if err != nil {
-			return false, fmt.Errorf("error creating request: %v", err)
+			fmt.Printf("Debug: Error creating scan status request: %v\n", err)
+			return false, err
 		}
 
 		resp, err := httpclient.MyHTTPClient.Do(req)
 		if err != nil {
-			return false, fmt.Errorf("error making request: %v", err)
+			fmt.Printf("Debug: Error making scan status request: %v\n", err)
+			return false, err
 		}
 
 		body, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
-
 		if err != nil {
-			return false, fmt.Errorf("error reading response body: %v", err)
+			fmt.Printf("Debug: Error reading scan status response: %v\n", err)
+			return false, err
 		}
 
-		var scanResponse ScanResponse
-		err = json.Unmarshal(body, &scanResponse)
+		fmt.Printf("Debug: Scan status API response: %s\n", string(body))
+
+		var response ScanResponse
+		err = json.Unmarshal(body, &response)
 		if err != nil {
-			return false, fmt.Errorf("error parsing response: %v", err)
+			fmt.Printf("Debug: Error parsing scan status response: %v\n", err)
+			return false, err
 		}
 
-		// Check if scan is completed
-		if scanResponse.CurrentSession.Status == "completed" {
+		status := response.CurrentSession.Status
+		fmt.Printf("Debug: Current scan status: %s\n", status)
+
+		if status == "completed" {
+			fmt.Println("Debug: Scan completed successfully")
 			return true, nil
+		} else if status == "failed" || status == "aborted" {
+			fmt.Printf("Debug: Scan failed or was aborted with status: %s\n", status)
+			return false, fmt.Errorf("scan failed with status: %s", status)
 		}
 
-		// Wait for 5 seconds before checking again
-		time.Sleep(5 * time.Second)
+		fmt.Println("Debug: Scan still in progress, waiting 10 seconds before next check")
+		time.Sleep(10 * time.Second)
 	}
 }
 
@@ -1069,26 +809,87 @@ func RunAutoCommand(targetURL string, waitTimeout int, outputPath string, output
 		return fmt.Errorf("target URL is required")
 	}
 
-	var downloadedFiles []string
-	var targetID, scanID, reportID string
-	var err error
+	if scanProfileID == "" {
+		// Use default scan profile ID if not provided
+		scanProfileID = "11111111-1111-1111-1111-111111111111"
+	}
 
-	// Add target
-	targetID, err = addTarget(targetURL)
+	if reportTemplateID == "" && outputFormat != "csv" {
+		// Use default report template ID if not provided and format is not CSV
+		reportTemplateID = "11111111-1111-1111-1111-111111111126"
+	}
+
+	// Create output directory if specified and doesn't exist
+	if outputPath != "" {
+		// Extract directory part from the output path
+		outputDir := filepath.Dir(outputPath)
+		if outputDir != "." {
+			err := os.MkdirAll(outputDir, 0755)
+			if err != nil {
+				return fmt.Errorf("failed to create output directory: %v", err)
+			}
+		}
+	}
+
+	// Step 1: Add target
+	targetID, err := addTarget(targetURL)
 	if err != nil {
 		return fmt.Errorf("failed to add target: %v", err)
 	}
 
-	// Start scan
-	scanID, err = startScan(targetID, scanProfileID)
+	// Log progress
+	jsonoutput.OutputJSON(map[string]interface{}{
+		"step":      "1. Add target",
+		"target_id": targetID,
+		"status":    "completed",
+	})
+
+	// Step 2: Get target to check if it exists
+	targetExists, err := checkTargetExists(targetID)
+	if err != nil || !targetExists {
+		removeTarget(targetID)
+		return fmt.Errorf("failed to verify target: %v", err)
+	}
+
+	// Log progress
+	jsonoutput.OutputJSON(map[string]interface{}{
+		"step":      "2. Check target exists",
+		"target_id": targetID,
+		"status":    "completed",
+	})
+
+	// Step 3: Add scan with scan profile ID
+	scanID, err := startScan(targetID, scanProfileID)
 	if err != nil {
 		removeTarget(targetID)
 		return fmt.Errorf("failed to start scan: %v", err)
 	}
 
-	// Wait for scan completion
-	scanComplete, err := waitForScanCompletion(scanID, waitTimeout)
-	if err != nil || !scanComplete {
+	// Log progress
+	jsonoutput.OutputJSON(map[string]interface{}{
+		"step":    "3. Start scan",
+		"scan_id": scanID,
+		"status":  "completed",
+	})
+
+	// Step 4: Check scan ID
+	scanExists, err := checkScanExists(scanID)
+	if err != nil || !scanExists {
+		removeScan(scanID)
+		removeTarget(targetID)
+		return fmt.Errorf("failed to verify scan: %v", err)
+	}
+
+	// Log progress
+	jsonoutput.OutputJSON(map[string]interface{}{
+		"step":    "4. Check scan exists",
+		"scan_id": scanID,
+		"status":  "completed",
+	})
+
+	// Step 5: Wait for scan status to be completed
+	scanCompleted, err := waitForScanCompletion(scanID, waitTimeout)
+	if err != nil || !scanCompleted {
 		removeScan(scanID)
 		removeTarget(targetID)
 		if err != nil {
@@ -1097,76 +898,98 @@ func RunAutoCommand(targetURL string, waitTimeout int, outputPath string, output
 		return fmt.Errorf("scan timed out after %d seconds", waitTimeout)
 	}
 
-	if outputFormat == "csv" {
-		// Create CSV export
-		exportID, err := createExport("csv", []string{scanID})
+	// Log progress
+	jsonoutput.OutputJSON(map[string]interface{}{
+		"step":    "5. Wait for scan completion",
+		"scan_id": scanID,
+		"status":  "completed",
+	})
+
+	// Step 6: Generate report or create export based on format
+	var reportID string
+	var downloadLinks []string
+
+	if strings.ToLower(outputFormat) == "csv" {
+		// Create export for CSV format
+		reportID, err = createExport("21111111-1111-1111-1111-111111111141", []string{scanID})
 		if err != nil {
 			removeScan(scanID)
 			removeTarget(targetID)
 			return fmt.Errorf("failed to create export: %v", err)
 		}
 
+		// Log progress
+		jsonoutput.OutputJSON(map[string]interface{}{
+			"step":      "6. Create export",
+			"report_id": reportID,
+			"status":    "completed",
+		})
+
 		// Wait for export completion
-		downloadLinks, err := waitForExportCompletion(exportID, waitTimeout)
+		downloadLinks, err = waitForExportCompletion(reportID, waitTimeout)
 		if err != nil {
-			removeExport(exportID)
+			removeExport(reportID)
 			removeScan(scanID)
 			removeTarget(targetID)
 			return fmt.Errorf("error waiting for export: %v", err)
 		}
-
-		// Download export files
-		downloadedFiles, err = downloadReportFiles(downloadLinks, outputPath)
-		if err != nil {
-			removeExport(exportID)
-			removeScan(scanID)
-			removeTarget(targetID)
-			return fmt.Errorf("failed to download export files: %v", err)
-		}
-
-		// Cleanup after successful download
-		removeExport(exportID)
 	} else {
 		// Generate HTML report
-		reportID, err = generateReport(reportTemplateID, "Auto-generated report", "scans", []string{scanID})
+		reportID, err = generateReport(reportTemplateID, "Auto-generated report", "scan_result", []string{scanID})
 		if err != nil {
 			removeScan(scanID)
 			removeTarget(targetID)
 			return fmt.Errorf("failed to generate report: %v", err)
 		}
 
+		// Log progress
+		jsonoutput.OutputJSON(map[string]interface{}{
+			"step":      "6. Generate report",
+			"report_id": reportID,
+			"status":    "completed",
+		})
+
 		// Wait for report completion
-		downloadLinks, err := waitForReportCompletion(reportID, waitTimeout)
+		downloadLinks, err = waitForReportCompletion(reportID, waitTimeout)
 		if err != nil {
 			removeReport(reportID)
 			removeScan(scanID)
 			removeTarget(targetID)
 			return fmt.Errorf("error waiting for report: %v", err)
 		}
-
-		// Download report files
-		downloadedFiles, err = downloadReportFiles(downloadLinks, outputPath)
-		if err != nil {
-			removeReport(reportID)
-			removeScan(scanID)
-			removeTarget(targetID)
-			return fmt.Errorf("failed to download report files: %v", err)
-		}
-
-		// Cleanup after successful download
-		removeReport(reportID)
 	}
 
-	// Cleanup remaining resources
+	// Step 7: Download report/export files
+	downloadedFiles, err := downloadReportFiles(downloadLinks, outputPath)
+	if err != nil {
+		if strings.ToLower(outputFormat) == "csv" {
+			removeExport(reportID)
+		} else {
+			removeReport(reportID)
+		}
+		removeScan(scanID)
+		removeTarget(targetID)
+		return fmt.Errorf("failed to download files: %v", err)
+	}
+
+	// Clean up resources
+	if strings.ToLower(outputFormat) == "csv" {
+		removeExport(reportID)
+	} else {
+		removeReport(reportID)
+	}
 	removeScan(scanID)
 	removeTarget(targetID)
 
-	// Output final result as JSON
-	result := map[string]interface{}{
-		"status": "completed",
-		"files":  downloadedFiles,
-	}
-	jsonoutput.OutputJSON(result)
+	// Final success output
+	jsonoutput.OutputJSON(map[string]interface{}{
+		"status":    "success",
+		"message":   "Auto process completed successfully",
+		"target_id": targetID,
+		"scan_id":   scanID,
+		"report_id": reportID,
+		"files":     downloadedFiles,
+	})
 
 	return nil
 }

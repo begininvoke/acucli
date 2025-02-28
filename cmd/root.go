@@ -39,6 +39,11 @@ var RootCmd = &cobra.Command{
 - Configure and run scans
 - Generate and manage reports
 - Automate the entire scanning workflow`,
+	SilenceErrors: true,
+	SilenceUsage:  true,
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		return initConfig()
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if versionFlag {
 			fmt.Println("acucli version 1.0.0")
@@ -46,7 +51,9 @@ var RootCmd = &cobra.Command{
 		}
 
 		if autoMode {
-			// Run auto command with global flags
+			if targetURL == "" {
+				return fmt.Errorf("target URL is required when using auto mode")
+			}
 			return auto.RunAutoCommand(targetURL, waitTimeout, outputPath, outputFormat)
 		}
 
@@ -57,59 +64,65 @@ var RootCmd = &cobra.Command{
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
-	err := RootCmd.Execute()
-	if err != nil {
+	if err := RootCmd.Execute(); err != nil {
+		fmt.Println(err)
 		os.Exit(1)
 	}
 }
 
 func init() {
+	// Add commands
 	RootCmd.AddCommand(target.TargetCmd)
 	RootCmd.AddCommand(targetGroup.TargetGroupCmd)
 	RootCmd.AddCommand(scanProfile.ScanProfileCmd)
 	RootCmd.AddCommand(scan.ScanCmd)
 	RootCmd.AddCommand(report.ReportCmd)
-	RootCmd.AddCommand(auto.AutoCmd)
 	RootCmd.AddCommand(export.ExportCmd)
-	cobra.OnInitialize(initConfig)
 
 	// Global flags
-	RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.acucli.yaml)")
-	RootCmd.PersistentFlags().StringVarP(&targetURL, "u", "u", "", "Target URL to scan")
-	RootCmd.PersistentFlags().IntVarP(&waitTimeout, "i", "i", 800, "Timeout in seconds for waiting operations")
-	RootCmd.PersistentFlags().StringVarP(&outputPath, "o", "o", "", "Output path for downloaded report files")
-	RootCmd.PersistentFlags().StringVarP(&outputFormat, "f", "f", "html", "Output format (csv or html)")
+	RootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "config file (default is $HOME/.acucli.yaml)")
 
-	// Root-only flags
+	// Auto mode flags
 	RootCmd.Flags().BoolVarP(&autoMode, "auto", "a", false, "Run in auto mode")
+	RootCmd.Flags().StringVarP(&targetURL, "u", "u", "", "Target URL to scan")
+	RootCmd.Flags().IntVarP(&waitTimeout, "i", "i", 800, "Timeout in seconds for waiting operations")
+	RootCmd.Flags().StringVarP(&outputPath, "o", "o", "", "Output path for downloaded report files")
+	RootCmd.Flags().StringVarP(&outputFormat, "f", "f", "html", "Output format (csv or html)")
 	RootCmd.Flags().BoolVarP(&versionFlag, "version", "v", false, "Show version information")
 }
 
 // initConfig reads in config file and ENV variables if set.
-func initConfig() {
+func initConfig() error {
 	if cfgFile != "" {
-		// Use config file from the flag.
 		viper.SetConfigFile(cfgFile)
 	} else {
-		// Get current working directory
 		currentDir, err := os.Getwd()
-		cobra.CheckErr(err)
+		if err != nil {
+			return fmt.Errorf("failed to get current directory: %v", err)
+		}
 
-		// Find home directory.
 		home, err := os.UserHomeDir()
-		cobra.CheckErr(err)
+		if err != nil {
+			return fmt.Errorf("failed to get home directory: %v", err)
+		}
 
-		// Search config in home directory and current directory
 		viper.AddConfigPath(home)
 		viper.AddConfigPath(currentDir)
 		viper.SetConfigType("yaml")
 		viper.SetConfigName("acucli")
 	}
 
-	viper.AutomaticEnv() // read in environment variables that match
+	viper.AutomaticEnv()
 
-	// If a config file is found, read it in.
-	if err := viper.ReadInConfig(); err == nil {
-		httpclient.CreateHttpClient(viper.GetString("API"))
+	if err := viper.ReadInConfig(); err != nil {
+		return fmt.Errorf("failed to read config file: %v", err)
 	}
+
+	apiKey := viper.GetString("API")
+	if apiKey == "" {
+		return fmt.Errorf("API key not found in config file")
+	}
+
+	httpclient.CreateHttpClient(apiKey)
+	return nil
 }
