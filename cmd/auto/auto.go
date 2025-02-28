@@ -108,8 +108,9 @@ var outputFormat string
 
 // AutoCmd represents the auto command
 var AutoCmd = &cobra.Command{
-	Use:   "auto",
-	Short: "Automate the process of scanning and reporting",
+	Use:     "auto",
+	Aliases: []string{"-auto"},
+	Short:   "Automate the process of scanning and reporting",
 	Long: `Automate the process of adding a target, scanning it, generating a report, and downloading the report files.
 	
 This command performs the following steps:
