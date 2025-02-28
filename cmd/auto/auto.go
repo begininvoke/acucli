@@ -750,7 +750,7 @@ func downloadReportFiles(downloadLinks []string, outputPath string) ([]string, e
 		// Check if the output path ends with .html (or another extension)
 		// to determine if it's a filename or just a directory
 		if strings.HasSuffix(strings.ToLower(outputPath), ".html") ||
-			strings.HasSuffix(strings.ToLower(outputPath), ".csv") {
+			strings.HasSuffix(strings.ToLower(outputPath), ".csv") || strings.HasSuffix(strings.ToLower(outputPath), ".json") {
 			// It's a filename
 			customFilename = filepath.Base(outputPath)
 			outputDir = filepath.Dir(outputPath)
@@ -1067,7 +1067,7 @@ func init() {
 	AutoCmd.Flags().StringVarP(&targetURL, "target", "t", "", "Target URL to scan (required)")
 	AutoCmd.Flags().StringVarP(&scanProfileID, "scanProfileID", "s", "", "Scan profile ID to use")
 	AutoCmd.Flags().StringVarP(&reportTemplateID, "reportTemplateID", "r", "", "Report template ID to use")
-	AutoCmd.Flags().IntVarP(&waitTimeout, "timeout", "time", 800, "Timeout in seconds for waiting operations")
+	AutoCmd.Flags().IntVarP(&waitTimeout, "timeout", "i", 800, "Timeout in seconds for waiting operations")
 	AutoCmd.Flags().StringVarP(&outputPath, "output", "o", "", "Output path for downloaded report files (directory or specific filename)")
 	AutoCmd.Flags().StringVarP(&outputFormat, "format", "f", "html", "Output format for the report (csv or html)")
 
